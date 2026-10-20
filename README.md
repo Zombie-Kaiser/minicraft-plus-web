@@ -6,7 +6,8 @@
 
 # Minicraft+
 
-![Minicraft+](https://user-images.githubusercontent.com/37084190/138313821-75ac3112-7044-45c1-bdbb-d89f2333c2c0.png)
+<img width="1336" height="1150" alt="{42D6E8A8-6FAB-4C54-9607-4908EB6B8543}" src="https://github.com/user-attachments/assets/2a14253d-395e-4512-8294-e6dfda2f7e92" />
+
 
 Minicraft+ is an overhaul mod of Minicraft, a game made by Markus "Notch" Persson in the Ludum Dare 22 contest. To learn
 more about Minicraft take a look at [our website](https://minicraftplus.github.io/), talk to the community at
