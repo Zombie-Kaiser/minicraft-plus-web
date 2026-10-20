@@ -1,0 +1,226 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        // TeaVM transpiler driving the web port. The runtime artifacts must be
+        // here too: TeaVMTool loads its backend plugins (JSO etc.) via
+        // ServiceLoader from this classloader, and the classlib provides the
+        // java.* implementation classes for transpilation.
+        classpath 'org.teavm:teavm-tooling:0.16.0'
+        classpath 'org.teavm:teavm-classlib:0.16.0'
+        classpath 'org.teavm:teavm-jso:0.16.0'
+        classpath 'org.teavm:teavm-jso-impl:0.16.0'
+        classpath 'org.teavm:teavm-platform:0.16.0'
+        classpath 'org.teavm:teavm-metaprogramming-impl:0.16.0'
+    }
+}
+
+plugins {
+    id 'application'
+    id 'maven-publish'
+}
+
+allprojects {
+    apply plugin: "java"
+    apply plugin: "application"
+
+    version = "2.3.0-infdev3"
+
+    sourceCompatibility = 8
+    [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    sourceSets.main {
+        java {
+            srcDir "java"
+        }
+        resources {
+            srcDir "resources"
+        }
+    }
+
+    dependencies {
+        implementation 'org.jetbrains:annotations:23.0.0'
+        // tinylog replaced by src/client/java_stubs/org/tinylog stubs (web port).
+    }
+}
+
+project(":common") {
+    dependencies {
+
+    }
+}
+
+project(":client") {
+    archivesBaseName = "minicraft-plus"
+
+    // Platform stubs for the web port (tinylog, jamepad, javax.security.auth).
+    sourceSets.main {
+        java {
+            srcDir "java_stubs"
+        }
+    }
+
+    dependencies {
+        implementation project(":common")
+
+        implementation 'org.json:json:20220320'
+        // gdx / jamepad / unirest dropped: unused after the web port rewrites.
+
+        // TeaVM classpath for the web layer (provided at transpile time by the
+        // buildscript classpath in the teavmJs task).
+        compileOnly 'org.teavm:teavm-classlib:0.16.0'
+        compileOnly 'org.teavm:teavm-jso:0.16.0'
+    }
+
+    // TeaVM 0.16 jars are built for JVM 17+; they are only a compile/transpile
+    // classpath here (the game itself still compiles with Java 8 compatibility).
+    configurations.compileClasspath {
+        attributes {
+            attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 17)
+        }
+    }
+
+    application {
+        mainClass = 'minicraft.core.Game'
+    }
+
+    // Transpiles the client (+ web layer + stubs) to web/game.js with TeaVM,
+    // mirrors the bundled resources into web/resources and writes web/manifest.json.
+    task teavmJs {
+        description 'Transpiles the client to JavaScript with TeaVM for the web port.'
+        group 'build'
+        dependsOn 'classes'
+
+        doLast {
+            def webDir = rootProject.file('web')
+            webDir.mkdirs()
+
+            def classPath = [] as List<File>
+            classPath.addAll(sourceSets.main.runtimeClasspath.files)
+            classPath.addAll(rootProject.buildscript.configurations.classpath.files)
+
+            def tool = new org.teavm.tooling.TeaVMTool()
+            tool.setLog(new org.teavm.tooling.ConsoleTeaVMToolLog(false))
+            tool.setMainClass('minicraft.web.WebMain')
+            tool.setTargetType(org.teavm.tooling.TeaVMTargetType.JAVASCRIPT)
+            tool.setTargetDirectory(webDir)
+            tool.setTargetFileName('game.js')
+            tool.setClassPath(classPath)
+            tool.setStrict(false) // green threads: new Thread() for world gen etc.
+            tool.setObfuscated(false) // readable browser stack traces
+            tool.setIncremental(false)
+            tool.setDebugInformationGenerated(false)
+            tool.setSourceMapsFileGenerated(false)
+            tool.generate()
+            def problems = tool.getProblemProvider().getProblems()
+            problems.each { p ->
+                def text = p.getText()
+                def params = p.getParams()
+                if (params != null) {
+                    def pm = java.util.regex.Pattern.compile('\\{\\{[a-z](\\d+)\\}\\}').matcher(text)
+                    def sb = new StringBuilder()
+                    while (pm.find()) {
+                        def v = params[Integer.parseInt(pm.group(1))]
+                        pm.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(v == null ? '?' : v.toString()))
+                    }
+                    pm.appendTail(sb)
+                    text = sb.toString()
+                }
+                def loc = ""
+                if (p.getLocation() != null && p.getLocation().getMethod() != null) {
+                    loc = " @ " + p.getLocation().getMethod()
+                }
+                println "TEAVM-" + p.getSeverity() + loc + ": " + text
+            }
+            def severe = tool.getProblemProvider().getSevereProblems()
+            if (!severe.isEmpty()) {
+                throw new GradleException("TeaVM reported " + severe.size() + " severe problem(s); see TEAVM-* lines above.")
+            }
+            println "TeaVM wrote ${new File(webDir, 'game.js').length()} bytes to web/game.js."
+
+            def resDir = file("${projectDir}/resources")
+            def webResDir = new File(webDir, 'resources')
+            copy {
+                from resDir
+                into webResDir
+            }
+            def manifest = []
+            resDir.eachFileRecurse { f ->
+                if (f.isFile()) {
+                    manifest << resDir.toPath().relativize(f.toPath()).toString().replace('\\', '/')
+                }
+            }
+            manifest.sort()
+            new File(webDir, 'manifest.json').text = groovy.json.JsonOutput.toJson(manifest)
+            println "Wrote web/manifest.json with ${manifest.size()} bundled resources."
+        }
+    }
+}
+
+project(":server") {
+
+    archivesBaseName = "minicraft-plus-server"
+
+    dependencies {
+        implementation project(":common")
+    }
+
+    application {
+        mainClass = 'minicraft.core.Server'
+    }
+}
+
+// Building the root project actually just builds the client project.
+dependencies {
+    implementation project(":client")
+}
+
+// Running the root project actually just runs the client project
+application {
+    mainClass = 'minicraft.core.Game'
+}
+
+// Build a runnable game distribution.
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'minicraft.core.Game',
+                'Implementation-Title': project.name,
+                'Implementation-Version': project.version,
+                'SplashScreen-Image': "Minicraft_Splash_Screen_3.png")
+    }
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from files(sourceSets.main.output.classesDirs)
+    from files(sourceSets.main.output.resourcesDir)
+    from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+}
+
+publishing {
+	repositories {
+		maven {
+			name = "GitHubPackages"
+			url = "https://maven.pkg.github.com/MinicraftPlus/minicraft-plus-revived"
+			credentials {
+				username = System.getenv("GITHUB_ACTOR")
+				password = System.getenv("GITHUB_TOKEN")
+			}
+		}
+	}
+}
+
+// Don't override if we're building a tar package.
+tasks.withType(Tar) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+tasks.withType(Zip) {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
