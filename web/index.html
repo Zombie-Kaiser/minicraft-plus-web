@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Minicraft Plus Revived</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  #c { width: 100vw; height: 100vh; display: block; object-fit: contain;
+       image-rendering: pixelated; outline: none; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #fff; font: 14px/1.6 Consolas, monospace; background: rgba(0, 0, 0, 0.75);
+    text-align: center; white-space: pre; user-select: none; }
+  #overlay[hidden] { display: none; }
+  #hint { position: fixed; left: 12px; bottom: 10px; color: rgba(255,255,255,0.85);
+    font: 13px Consolas, monospace; text-shadow: 0 1px 2px rgba(0,0,0,0.8); user-select: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="288" height="192" tabindex="0"></canvas>
+<div id="overlay" hidden>loading&hellip;</div>
+<div id="hint" hidden>WASD / arrows move &nbsp;&middot;&nbsp; Enter select &nbsp;&middot;&nbsp; Z / E inventory &nbsp;&middot;&nbsp; Esc menu</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
